@@ -199,6 +199,77 @@ def is_ok_sign(hand_landmarks):
     
     return thumb_index_connected and middle_fully_extended and ring_fully_extended and pinky_fully_extended
 
+def is_thumbs_up(hand_landmarks):
+    """
+    Prüft Daumen hoch (👍):
+    - Daumen TIP höher als IP und MCP (kleinere y => höher im Bild)
+    - Andere Finger eingeklappt (TIP unter MCP)
+    """
+    if len(hand_landmarks) < 21:
+        return False
+
+    THUMB_CMC = 1
+    THUMB_MCP = 2
+    THUMB_IP  = 3
+    THUMB_TIP = 4
+
+    INDEX_MCP = 5
+    INDEX_TIP = 8
+    MIDDLE_MCP = 9
+    MIDDLE_TIP = 12
+    RING_MCP = 13
+    RING_TIP = 16
+    PINKY_MCP = 17
+    PINKY_TIP = 20
+
+    thumb_tip = hand_landmarks[THUMB_TIP]
+    thumb_ip  = hand_landmarks[THUMB_IP]
+    thumb_mcp = hand_landmarks[THUMB_MCP]
+
+    # Daumen deutlich nach oben
+    thumb_up = (thumb_tip.y < thumb_ip.y) and (thumb_tip.y < thumb_mcp.y) and ((thumb_mcp.y - thumb_tip.y) > 0.05)
+
+    # Andere Finger zu (TIP tiefer als MCP)
+    index_closed  = hand_landmarks[INDEX_TIP].y  > hand_landmarks[INDEX_MCP].y
+    middle_closed = hand_landmarks[MIDDLE_TIP].y > hand_landmarks[MIDDLE_MCP].y
+    ring_closed   = hand_landmarks[RING_TIP].y   > hand_landmarks[RING_MCP].y
+    pinky_closed  = hand_landmarks[PINKY_TIP].y  > hand_landmarks[PINKY_MCP].y
+
+    return thumb_up and index_closed and middle_closed and ring_closed and pinky_closed
+
+def show_canvas_popup(paintWindow):
+    """
+    Zeigt das Canvas (paintWindow) in einem Popup mit weißem Hintergrund.
+    Speichert NICHT.
+    """
+    canvas = paintWindow.copy()
+    
+    # Sicherstellen, dass es uint8 ist
+    if canvas.dtype != np.uint8:
+        canvas = np.clip(canvas, 0, 255).astype(np.uint8)
+    
+    cv2.namedWindow("Canvas Popup", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Canvas Popup", canvas.shape[1], canvas.shape[0])
+    cv2.imshow("Canvas Popup", canvas)
+    
+    print("Canvas im Popup angezeigt. Schließen Sie das Fenster manuell.")
+
+def save_camera_screenshot(frame, prefix="camera"):
+    """
+    Speichert einen Screenshot des Kamerafeeds als PNG.
+    """
+    import datetime
+    import os
+    
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{prefix}_{timestamp}.png"
+    ok = cv2.imwrite(filename, frame)
+    if ok:
+        print(f"Camera-Screenshot gespeichert: {os.path.abspath(filename)}")
+        return filename
+    print("Fehler: Camera-Screenshot konnte nicht gespeichert werden.")
+    return None
+
 def show_screenshot_popup(frame):
     """
     Zeigt einen Screenshot des aktuellen Kamerafeeds in einem separaten Popup-Fenster.
@@ -278,6 +349,8 @@ was_drawing_previous_frame = False
 was_showing_palm_previous_frame = False
 # Variable um zu verhindern, dass OK-Zeichen bei jedem Frame ausgelöst wird
 was_showing_ok_previous_frame = False
+# Variable um zu verhindern, dass Thumbs Up bei jedem Frame ausgelöst wird
+was_showing_thumbs_previous_frame = False
 
 # Loading the default webcam of PC.
 cap = cv2.VideoCapture(0)
@@ -291,6 +364,17 @@ if not ret:
 # Canvas setup - dynamisch an Frame-Größe angepasst
 paintWindow = np.ones((first_frame.shape[0], first_frame.shape[1], 3), dtype=np.uint8) * 255
 cv2.namedWindow('Paint', cv2.WINDOW_AUTOSIZE)
+
+# OPTIONAL: Recording aktivieren
+recording_enabled = False  # Auf True setzen, wenn Video-Recording gewünscht ist
+video_writer = None
+recording_stopped = False
+
+if recording_enabled:
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    h, w, _ = first_frame.shape
+    video_writer = cv2.VideoWriter("recording.mp4", fourcc, 30.0, (w, h))
+    print("Recording gestartet: recording.mp4")
 frame_timestamp_ms = 0
 
 # Keep looping
@@ -317,6 +401,7 @@ while True:
     is_drawing_current_frame = False
     is_showing_palm_current_frame = False
     is_showing_ok_current_frame = False
+    is_showing_thumbs_current_frame = False
     
     # If hand is detected
     if detection_result.hand_landmarks:
@@ -348,8 +433,29 @@ while True:
             # Get the index finger tip (landmark 8)
             # MediaPipe hand landmarks: 0=wrist, 4=thumb_tip, 8=index_tip, 12=middle_tip, 16=ring_tip, 20=pinky_tip
             if len(hand_landmarks) >= 21:
-                # Prüfe zuerst, ob alle Finger ausgestreckt sind (Clear All Geste)
-                if are_all_fingers_extended(hand_landmarks):
+                # 1) THUMBS UP (👍) - Popup Canvas + Recording stoppen + Camera Screenshot (priorisiert)
+                if is_thumbs_up(hand_landmarks):
+                    is_showing_thumbs_current_frame = True
+                    cv2.putText(frame, "THUMBS UP - Show canvas + stop rec + screenshot", (10, 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    
+                    # Nur einmal auslösen
+                    if not was_showing_thumbs_previous_frame:
+                        # 1) Canvas Popup (NICHT speichern)
+                        show_canvas_popup(paintWindow)
+                        
+                        # 2) Recording beenden
+                        if recording_enabled and (video_writer is not None) and (not recording_stopped):
+                            video_writer.release()
+                            recording_stopped = True
+                            video_writer = None
+                            print("Recording beendet.")
+                        
+                        # 3) Camera-Screenshot schießen (Tracking frame)
+                        save_camera_screenshot(frame, prefix="camera")
+                
+                # 2) Prüfe, ob alle Finger ausgestreckt sind (Clear All Geste)
+                elif are_all_fingers_extended(hand_landmarks):
                     is_showing_palm_current_frame = True
                     # Zeige Hinweis
                     cv2.putText(frame, "CLEAR ALL - Show palm", (10, 30), 
@@ -433,10 +539,15 @@ while True:
             ypoints.append(deque(maxlen=512))
             yellow_index += 1
     
+    # Wenn Recording aktiv und nicht gestoppt: Frame ins Video
+    if recording_enabled and (video_writer is not None) and (not recording_stopped):
+        video_writer.write(frame)
+    
     # Aktualisiere den Status für den nächsten Frame
     was_drawing_previous_frame = is_drawing_current_frame
     was_showing_palm_previous_frame = is_showing_palm_current_frame
     was_showing_ok_previous_frame = is_showing_ok_current_frame
+    was_showing_thumbs_previous_frame = is_showing_thumbs_current_frame
 
     # Draw lines of all the colors on the canvas and frame 
     points = [bpoints, gpoints, rpoints, ypoints]
@@ -457,6 +568,9 @@ while True:
         break
 
 # Release the camera and all resources
+if video_writer is not None:
+    video_writer.release()
+    print("Recording beendet.")
 hand_landmarker.close()
 cap.release()
 cv2.destroyAllWindows()
