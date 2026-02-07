@@ -657,7 +657,8 @@ while True:
     glasses_masked = draw_center_arrows(
         glasses_masked,
         angle_deg=arrow_angle,
-        offset_y=50   # move arrows x pixels down from the center
+        offset_y=50,            # move arrows x pixels down from the center
+        tilt_deg=70.0,          # heigher = stronger 3D
     )
 
     # Show all the windows
