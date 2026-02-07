@@ -62,12 +62,14 @@ def _draw_3d_arrow_at(
     depth_ratio=0.35,
     focal_px=900.0,
     z_offset=900.0,
+    smooth_tilt=False,smooth vs hard flip
 ):
     """
-    3D-looking arrow that rotates around its CENTER.
-    angle_deg: 0=up, +clockwise (screen-space)
-    tilt_deg:  out-of-plane tilt; arrow recedes (points away) for positive tilt_deg
-    Includes end-on fallback glyph so axis stays visible.
+    3D-looking arrow rotating around its CENTER.
+    angle_deg: 0=up, +clockwise (screen-space).
+    tilt flips depending on whether arrow points up vs down, so:
+      - up-ish: recedes (away)
+      - down-ish: comes toward you
     """
     cx, cy = center_xy
     L = float(length_px)
@@ -75,13 +77,12 @@ def _draw_3d_arrow_at(
     depth = sw * float(depth_ratio)
 
     hl = L * float(head_len_ratio)
-    shaft_L = max(1.0, L - hl)
     hw = max(sw * 1.2, L * float(head_w_ratio))
 
     # ---- Build model centered at origin along +X (from -L/2 .. +L/2)
-    # Shaft spans [-L/2, +L/2 - hl]
     x0 = -L / 2.0
     x_shaft_end = (L / 2.0) - hl
+    tip_x = L / 2.0
 
     def box(x0, x1, y0, y1, z0, z1):
         return np.array([
@@ -91,8 +92,6 @@ def _draw_3d_arrow_at(
 
     shaft = box(x0, x_shaft_end, -sw/2, sw/2, -depth/2, depth/2)
 
-    # Head base at x_shaft_end, tip at +L/2
-    tip_x = L / 2.0
     head = np.array([
         [x_shaft_end, -hw/2, -depth/2],
         [x_shaft_end,  hw/2, -depth/2],
@@ -111,8 +110,15 @@ def _draw_3d_arrow_at(
 
     # Map to your convention: 0deg = up.
     # Build points along +X, then rotate -90° so +X becomes up.
-    # Negative tilt makes arrow recede (opposite of "pointing at us").
-    R = _rot_z(a) @ _rot_x(-tilt) @ _rot_z(roll) @ _rot_z(-math.pi / 2.0)
+    # ---- NEW: tilt depends on up vs down
+    if smooth_tilt:
+        # continuous: strongest when up/down, near zero when sideways
+        tilt_eff = -tilt * math.cos(a)
+    else:
+        # hard flip: up-ish => away (negative), down-ish => toward (positive)
+        tilt_eff = (-tilt) if (math.cos(a) >= 0.0) else (+tilt)
+
+    R = _rot_z(a) @ _rot_x(tilt_eff) @ _rot_z(roll) @ _rot_z(-math.pi / 2.0)
     V = (R @ V.T).T
 
     # ---- Camera
@@ -122,7 +128,6 @@ def _draw_3d_arrow_at(
     t = np.array([0.0, 0.0, float(z_offset)], dtype=np.float32)
 
     # ---- End-on fallback: if projected tip-tail is tiny, draw a glyph
-    # Tip and tail are ±L/2 along +X in model space (before the -90° mapping is in R already)
     tip3 = (R @ np.array([+L/2, 0.0, 0.0], dtype=np.float32).reshape(3, 1)).reshape(3)
     tail3 = (R @ np.array([-L/2, 0.0, 0.0], dtype=np.float32).reshape(3, 1)).reshape(3)
 
@@ -132,7 +137,6 @@ def _draw_3d_arrow_at(
 
     end_on_thresh = max(10.0, sw * 0.6)
     if dist2 < end_on_thresh:
-        # Smaller Z is closer to camera (camera at 0, object at +z_offset)
         toward = (tip3[2] + t[2]) < (tail3[2] + t[2])
         _draw_end_on_axis_glyph(
             img,
@@ -194,11 +198,11 @@ def draw_center_arrows(
     offset_y: int = 0,
     tilt_deg: float = 55.0,
     roll_deg: float = 0.0,
+    smooth_tilt: bool = False,
 ) -> np.ndarray:
     """
-    Draws a *3D-looking* rotated arrow in the center of each half of a side-by-side glasses frame.
-    Rotates around the arrow CENTER.
-    Includes a fallback glyph so the axis stays visible when arrow points nearly at/away from camera.
+    3D-looking arrows in the center of both halves.
+    Now tilt direction changes for up vs down, so it looks correct when pointing down.
     """
     if glasses_frame is None or glasses_frame.size == 0:
         return glasses_frame
@@ -227,8 +231,7 @@ def draw_center_arrows(
             tilt_deg=tilt_deg,
             roll_deg=roll_deg,
             shaft_w=shaft_w,
-            focal_px=900.0,
-            z_offset=900.0,
+            smooth_tilt=smooth_tilt,
         )
 
     return out
