@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+*.so
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+.env/
+
+# Build artifacts
+build/
+dist/
+
+# Test/coverage
+.pytest_cache/
+.coverage
+
+# Logs and media
+*.log
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# IDEs and OS
+.vscode/
+.vs/
+.idea/
+.DS_Store
+Thumbs.db
+
+# User request
+aircanva.py
