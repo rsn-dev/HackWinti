@@ -6,6 +6,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import os
 import urllib.request
+from navigation import draw_center_arrows
 
 # MediaPipe Initialisierung für Hand-Erkennung
 def download_model_if_needed():
@@ -377,6 +378,9 @@ if recording_enabled:
     print("Recording gestartet: recording.mp4")
 frame_timestamp_ms = 0
 
+# navigation arrow angle
+arrow_angle = 0.0
+
 # Keep looping
 while True:
     # Reading the frame from the camera
@@ -562,7 +566,7 @@ while True:
     # create glasses view
     h, w = frame.shape[:2]
 
-    # 1) Fake stereo (B variant)
+    # Fake stereo effect
     shift = int(w * 0.02)  # 0.01..0.03
     left_eye  = np.roll(frame, -shift, axis=1)
     right_eye = np.roll(frame,  shift, axis=1)
@@ -572,12 +576,12 @@ while True:
         left_eye[:, -shift:] = 0
         right_eye[:, :shift] = 0
 
-    # 2) Combine into one wide image
+    # Combine into one wide image
     glasses_view = np.hstack([left_eye, right_eye])  # (h, 2w, 3)
     H, W = glasses_view.shape[:2]
     half_w = W // 2
 
-    # 3) Lens geometry (BIG lenses, top wider than bottom)
+    # Lens geometry (BIG lenses, top wider than bottom)
     lens_h = int(H * 0.82)             # big -> less black background
     top_w  = int(half_w * 0.95)        # wide top
     bot_w  = int(top_w * 0.78)         # narrower bottom
@@ -587,7 +591,7 @@ while True:
     cxL = half_w // 2
     cxR = half_w + half_w // 2
 
-    # 4) Build curved lens mask (outward-bent sides)
+    # Build curved lens mask (outward-bent sides)
     lens_mask = np.zeros((H, W), dtype=np.uint8)
 
     def add_curved_lens(m, cx, y, top_w, bot_w, h):
@@ -600,7 +604,7 @@ while True:
 
         # Side curvature ellipse (controls outward bend)
         side_rx = top_w // 2
-        side_ry = int(h * 0.52)         # smaller -> more bend; larger -> flatter
+        side_ry = int(h * 0.52) # smaller -> more bend; larger -> flatter
         cv2.ellipse(tmp, (cx, cy), (side_rx, side_ry), 0, 0, 360, 255, -1)
 
         # Bottom narrowing ellipse (makes bottom narrower than top)
@@ -614,11 +618,11 @@ while True:
     add_curved_lens(lens_mask, cxL, y0, top_w, bot_w, lens_h)
     add_curved_lens(lens_mask, cxR, y0, top_w, bot_w, lens_h)
 
-    # 5) Apply mask: video visible only inside lenses
+    # Apply mask: video visible only inside lenses
     bg = np.zeros_like(glasses_view)  # black outside
     glasses_masked = np.where(lens_mask[:, :, None] == 255, glasses_view, bg)
 
-    # 6) Solid nose bridge (NO camera)
+    # Solid nose bridge
     frame_color = (55, 55, 55)  # BGR
     bridge_w = int(half_w * 0.16)
     bridge_h = int(lens_h * 0.18)
@@ -633,18 +637,34 @@ while True:
         -1
     )
 
-    # 7) Outline (no top lines)
+    # Outline
     thick = 6
     contours, _ = cv2.findContours(lens_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     cv2.drawContours(glasses_masked, contours, -1, frame_color, thick)
 
+    key = cv2.waitKeyEx(1)
+    if key == 27:  # ESC-Taste zum Schliessen aller Fenster
+        break
+    elif key == 2424832:      # LEFT arrow
+        arrow_angle -= 10
+    elif key == 2555904:      # RIGHT arrow
+        arrow_angle += 10
+
+    # arrow angle normalization
+    arrow_angle %= 360
+
+    # after you build glasses_masked
+    glasses_masked = draw_center_arrows(
+        glasses_masked,
+        angle_deg=arrow_angle,
+        offset_y=50,            # move arrows x pixels down from the center
+        tilt_deg=70.0,          # heigher = stronger 3D
+        smooth_tilt=True        # True if you hate the hard flip near 90°
+    )
+
     # Show all the windows
     cv2.imshow("Tracking", glasses_masked)
     cv2.imshow("Paint", paintWindow)
-
-    # ESC-Taste zum Schließen aller Fenster
-    if cv2.waitKey(1) & 0xFF == 27:  # 27 ist ESC
-        break
 
 # Release the camera and all resources
 if video_writer is not None:
