@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+*.so
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+.env/
+
+# Build artifacts
+build/
+dist/
+
+# Test/coverage
+.pytest_cache/
+.coverage
+
+# Logs and media
+*.log
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.wav
+*.mp3
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.vs/
+.idea/
+
