@@ -6,7 +6,6 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import os
 import urllib.request
-from navigation import draw_center_arrows
 
 # MediaPipe Initialisierung für Hand-Erkennung
 def download_model_if_needed():
@@ -255,22 +254,6 @@ def show_canvas_popup(paintWindow):
     
     print("Canvas im Popup angezeigt. Schließen Sie das Fenster manuell.")
 
-def save_camera_screenshot(frame, prefix="camera"):
-    """
-    Speichert einen Screenshot des Kamerafeeds als PNG.
-    """
-    import datetime
-    import os
-    
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{prefix}_{timestamp}.png"
-    ok = cv2.imwrite(filename, frame)
-    if ok:
-        print(f"Camera-Screenshot gespeichert: {os.path.abspath(filename)}")
-        return filename
-    print("Fehler: Camera-Screenshot konnte nicht gespeichert werden.")
-    return None
-
 def show_screenshot_popup(frame):
     """
     Zeigt einen Screenshot des aktuellen Kamerafeeds in einem separaten Popup-Fenster.
@@ -289,45 +272,6 @@ def show_screenshot_popup(frame):
     print("Screenshot im Popup-Fenster angezeigt. Schließen Sie das Fenster manuell.")
     
     return screenshot
-
-def export_drawing_from_canvas(paintWindow):
-    """
-    Exportiert die Zeichnung direkt aus dem Canvas (paintWindow).
-    Das ist der robusteste Weg, da paintWindow bereits alle Linien enthält.
-    """
-    import datetime
-    import os
-    
-    try:
-        if paintWindow is None or paintWindow.size == 0:
-            print("Fehler: paintWindow ist leer!")
-            return None
-        
-        # Stelle sicher, dass das Canvas uint8 ist
-        canvas_u8 = paintWindow
-        if canvas_u8.dtype != np.uint8:
-            canvas_u8 = np.clip(canvas_u8, 0, 255).astype(np.uint8)
-        
-        # Generiere Dateinamen mit Zeitstempel
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"drawing_{timestamp}.png"
-        
-        # Speichere das Bild direkt
-        success = cv2.imwrite(filename, canvas_u8)
-        if success:
-            full_path = os.path.abspath(filename)
-            print(f"Zeichnung erfolgreich exportiert als: {full_path}")
-            return filename
-        else:
-            print(f"Fehler: Konnte Bild nicht speichern: {filename}")
-            return None
-            
-    except Exception as e:
-        print(f"Fehler beim Exportieren: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-
 
 # Giving different arrays to handle colour points of different colour
 bpoints = [deque(maxlen=1024)]
@@ -377,9 +321,6 @@ if recording_enabled:
     video_writer = cv2.VideoWriter("recording.mp4", fourcc, 30.0, (w, h))
     print("Recording gestartet: recording.mp4")
 frame_timestamp_ms = 0
-
-# navigation arrow angle
-arrow_angle = 0.0
 
 # Keep looping
 while True:
@@ -437,10 +378,10 @@ while True:
             # Get the index finger tip (landmark 8)
             # MediaPipe hand landmarks: 0=wrist, 4=thumb_tip, 8=index_tip, 12=middle_tip, 16=ring_tip, 20=pinky_tip
             if len(hand_landmarks) >= 21:
-                # 1) THUMBS UP (👍) - Popup Canvas + Recording stoppen + Camera Screenshot (priorisiert)
+                # 1) THUMBS UP (👍) - Popup Canvas + Recording stoppen (priorisiert)
                 if is_thumbs_up(hand_landmarks):
                     is_showing_thumbs_current_frame = True
-                    print("THUMBS UP - Show canvas + stop rec + screenshot")
+                    print("THUMBS UP - Show canvas + stop rec")
                     # cv2.putText(frame, "THUMBS UP - Show canvas + stop rec + screenshot", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                     
                     # Nur einmal auslösen
@@ -454,9 +395,6 @@ while True:
                             recording_stopped = True
                             video_writer = None
                             print("Recording beendet.")
-                        
-                        # 3) Camera-Screenshot schießen (Tracking frame)
-                        save_camera_screenshot(frame, prefix="camera")
                 
                 # 2) Prüfe, ob alle Finger ausgestreckt sind (Clear All Geste)
                 elif are_all_fingers_extended(hand_landmarks):
@@ -645,22 +583,6 @@ while True:
     key = cv2.waitKeyEx(1)
     if key == 27:  # ESC-Taste zum Schliessen aller Fenster
         break
-    elif key == 2424832:      # LEFT arrow
-        arrow_angle -= 10
-    elif key == 2555904:      # RIGHT arrow
-        arrow_angle += 10
-
-    # arrow angle normalization
-    arrow_angle %= 360
-
-    # after you build glasses_masked
-    glasses_masked = draw_center_arrows(
-        glasses_masked,
-        angle_deg=arrow_angle,
-        offset_y=50,            # move arrows x pixels down from the center
-        tilt_deg=70.0,          # heigher = stronger 3D
-        smooth_tilt=True        # True if you hate the hard flip near 90°
-    )
 
     # Show all the windows
     cv2.imshow("Tracking", glasses_masked)

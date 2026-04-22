@@ -62,7 +62,7 @@ def _draw_3d_arrow_at(
     depth_ratio=0.35,
     focal_px=900.0,
     z_offset=900.0,
-    smooth_tilt=False,smooth vs hard flip
+    smooth_tilt=False,
 ):
     """
     3D-looking arrow rotating around its CENTER.
